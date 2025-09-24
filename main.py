@@ -1,75 +1,135 @@
 import sqlite3
-conn = sqlite3.connect("bautizos.db")
+import csv
+import os
+
+# ====================================
+# 🔹 Conexión a la base de datos
+# ====================================
+conn = sqlite3.connect("database.db")
 cursor = conn.cursor()
-cursor.execute("""
+
+cursor.execute(
 CREATE TABLE IF NOT EXISTS bautizos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT NOT NULL,
-    fecha DATE NOT NULL,
+    s TEXT,
+    libro TEXT,
+    partida TEXT,
+    nombres TEXT,
+    apellidos TEXT,
+    parroquia TEXT,
+    edad TEXT,
     padre TEXT,
     madre TEXT,
+    pm TEXT,
     padrino TEXT,
-    madrina TEXT
+    madrina TEXT,
+    fecha DATE
 )
-""")
+)
 conn.commit()
 
-def agregar_bautizo():
-    nombre = input("Nombre del bautizado: ")
-    fecha = input("Fecha (YYYY-MM-DD): ")
-    padre = input("Nombre del padre: ")
-    madre = input("Nombre de la madre: ")
-    padrino = input("Nombre del padrino: ")
-    madrina = input("Nombre de la madrina: ")
+# ====================================
+# 🔹 Función: Importar CSV → SQLite
+# ====================================
+def importar_csv():
+    try:
+        folder = "data/"
+        archivos = [f for f in os.listdir(folder) if f.endswith(".csv")]
 
-    cursor.execute("INSERT INTO bautizos (nombre, fecha, padre, madre, padrino, madrina) VALUES (?, ?, ?, ?, ?, ?)",
-                   (nombre, fecha, padre, madre, padrino, madrina))
-    conn.commit()
-    print("Registro agregado con éxito.\n")
+        if not archivos:
+            print("⚠️ No se encontraron archivos CSV en la carpeta data.\n")
+            return
 
-def listar_bautizos():
-    cursor.execute("SELECT id, nombre, fecha FROM bautizos")
-    registros = cursor.fetchall()
-    if not registros:
-        print(" No hay registros.\n")
-    else:
-        for r in registros:
-            print(f"ID: {r[0]} | Nombre: {r[1]} | Fecha: {r[2]}")
-        print()
+        for file in archivos:
+            print(f"📂 Importando archivo: {file}...")
+            with open(os.path.join(folder, file), newline='', encoding="latin-1") as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    try:
+                        # Limpiar espacios en encabezados
+                        row = {k.strip(): v.strip() for k, v in row.items()}
 
-def buscar_bautizo():
-    nombre = input("Ingrese el nombre a buscar: ")
-    cursor.execute("SELECT * FROM bautizos WHERE nombre LIKE ?", ('%' + nombre + '%',))
-    resultados = cursor.fetchall()
-    if not resultados:
-        print(" No se encontraron registros.\n")
-    else:
-        for r in resultados:
-            print(r)
-        print()
+                        # Construir fecha YYYY-MM-DD
+                        dia = row.get("DIA", "").zfill(2)
+                        mes = row.get("MES", "").zfill(2)
+                        anio = row.get("AÑO", row.get("ANO", ""))  # soporte por si no reconoce Ñ
+                        fecha = f"{anio}-{mes}-{dia}" if anio and mes and dia else None
 
-# Menú principal
+                        cursor.execute("""
+                            INSERT INTO bautizos (genero, libro, partida, nombres, apellidos,
+                                                  parroquia, edad, padre, madre, pm, padrino, madrina, fecha)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            row.get("S", ""),
+                            row.get("LIBRO", ""),
+                            row.get("Partida", ""),
+                            row.get("NOMBRES", ""),
+                            row.get("APELLIDOS", ""),
+                            row.get("PARROQUIA DE BAUTIZO", ""),
+                            row.get("EDAD", ""),
+                            row.get("PADRE", ""),
+                            row.get("MADRE", ""),
+                            row.get("P/M", ""),
+                            row.get("PADRINO", ""),
+                            row.get("MADRINA", ""),
+                            fecha
+                        ))
+                    except Exception as e:
+                        print(f"⚠️ Error importando fila: {row}")
+                        print(f"   Detalle: {e}")
+            conn.commit()
+            print(f"✅ Datos de {file} importados correctamente.\n")
+
+    except Exception as e:
+        print(f"❌ Error general al importar: {e}\n")
+
+# ====================================
+# 🔹 Función: Buscar por nombre
+# ====================================
+def buscar_por_nombre():
+    try:
+        nombre = input("Ingrese el nombre o apellido a buscar: ")
+        cursor.execute("""
+            SELECT id, nombres, apellidos, fecha, padre, madre, padrino, madrina
+            FROM bautizos WHERE nombres LIKE ? OR apellidos LIKE ?
+        """, (f"%{nombre}%", f"%{nombre}%"))
+        resultados = cursor.fetchall()
+
+        if resultados:
+            print("\n🔎 RESULTADOS DE LA BÚSQUEDA:")
+            for r in resultados:
+                print(f"ID: {r[0]} | {r[1]} {r[2]} | Fecha: {r[3]} | Padres: {r[4]} y {r[5]} | Padrinos: {r[6]} y {r[7]}")
+            print()
+        else:
+            print("⚠️ No se encontraron coincidencias.\n")
+    except Exception as e:
+        print(f"❌ Error al buscar: {e}\n")
+
+# ====================================
+# 🔹 Menú principal
+# ====================================
 def menu():
     while True:
-        print("=== Sistema de Certificados de Bautizo ===")
-        print("1. Agregar bautizo")
-        print("2. Listar bautizos")
-        print("3. Buscar bautizo")
-        print("4. Salir")
+        print("===== MENÚ PRINCIPAL =====")
+        print("1. Importar archivos CSV")
+        print("2. Buscar por nombre o apellido")
+        print("3. Salir")
 
-        opcion = input("Seleccione una opción: ")
+        opcion = input("Elige una opción: ")
 
         if opcion == "1":
-            agregar_bautizo()
+            importar_csv()
         elif opcion == "2":
-            listar_bautizos()
+            buscar_por_nombre()
         elif opcion == "3":
-            buscar_bautizo()
-        elif opcion == "4":
-            print("Saliendo del sistema...")
+            print("👋 Saliendo del programa...")
             break
         else:
-            print("Opción inválida, intente de nuevo.\n")
+            print("❌ Opción no válida\n")
 
-menu()
-conn.close()
+# ====================================
+# 🔹 Ejecutar menú
+# ====================================
+if __name__ == "__main__":
+    menu()
+    conn.close()
