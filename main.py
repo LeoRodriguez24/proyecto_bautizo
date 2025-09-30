@@ -1,135 +1,125 @@
-import sqlite3
+2import os
 import csv
-import os
+import sqlite3
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
+def crear_tabla():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bautizos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            genero TEXT,
+            libro TEXT,
+            partida TEXT,
+            nombres TEXT,
+            apellidos TEXT,
+            parroquia_de_bautizo TEXT,
+            edad INTEGER,
+            padre TEXT,
+            madre TEXT,
+            p_m TEXT,
+            padrino TEXT,
+            madrina TEXT,
+            fecha_de_bautizo TEXT,
+            dia INTEGER,
+            mes INTEGER,
+            anio INTEGER
+        );
+    """)
+    conn.commit()
+    conn.close()
 
-# ====================================
-# 🔹 Conexión a la base de datos
-# ====================================
-conn = sqlite3.connect("database.db")
-cursor = conn.cursor()
-
-cursor.execute(
-CREATE TABLE IF NOT EXISTS bautizos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    s TEXT,
-    libro TEXT,
-    partida TEXT,
-    nombres TEXT,
-    apellidos TEXT,
-    parroquia TEXT,
-    edad TEXT,
-    padre TEXT,
-    madre TEXT,
-    pm TEXT,
-    padrino TEXT,
-    madrina TEXT,
-    fecha DATE
-)
-)
-conn.commit()
-
-# ====================================
-# 🔹 Función: Importar CSV → SQLite
-# ====================================
 def importar_csv():
-    try:
-        folder = "data/"
-        archivos = [f for f in os.listdir(folder) if f.endswith(".csv")]
+    if not os.path.exists(DATA_DIR):
+        print(f" La carpeta 'data' no existe en {BASE_DIR}.")
+        return
 
-        if not archivos:
-            print("⚠️ No se encontraron archivos CSV en la carpeta data.\n")
-            return
+    archivos = [f for f in os.listdir(DATA_DIR) if f.endswith(".csv")]
+    if not archivos:
+        print(" No hay archivos CSV en la carpeta 'data'.")
+        return
 
-        for file in archivos:
-            print(f"📂 Importando archivo: {file}...")
-            with open(os.path.join(folder, file), newline='', encoding="latin-1") as csvfile:
-                reader = csv.DictReader(csvfile)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    for archivo in archivos:
+        ruta = os.path.join(DATA_DIR, archivo)
+        print(f" Importando {ruta}...")
+
+        try:
+            # Detectar encoding automáticamente
+            try:
+                f = open(ruta, "r", encoding="utf-8")
+                f.read(1)
+                f.seek(0)
+            except UnicodeDecodeError:
+                f = open(ruta, "r", encoding="latin1")
+
+            with f:
+                reader = csv.DictReader(f)
+                # Normalizar nombres de columnas
+                reader.fieldnames = [col.strip().lower().replace(" ", "_") for col in reader.fieldnames]
+
                 for row in reader:
-                    try:
-                        # Limpiar espacios en encabezados
-                        row = {k.strip(): v.strip() for k, v in row.items()}
-
-                        # Construir fecha YYYY-MM-DD
-                        dia = row.get("DIA", "").zfill(2)
-                        mes = row.get("MES", "").zfill(2)
-                        anio = row.get("AÑO", row.get("ANO", ""))  # soporte por si no reconoce Ñ
-                        fecha = f"{anio}-{mes}-{dia}" if anio and mes and dia else None
-
-                        cursor.execute("""
-                            INSERT INTO bautizos (genero, libro, partida, nombres, apellidos,
-                                                  parroquia, edad, padre, madre, pm, padrino, madrina, fecha)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            row.get("S", ""),
-                            row.get("LIBRO", ""),
-                            row.get("Partida", ""),
-                            row.get("NOMBRES", ""),
-                            row.get("APELLIDOS", ""),
-                            row.get("PARROQUIA DE BAUTIZO", ""),
-                            row.get("EDAD", ""),
-                            row.get("PADRE", ""),
-                            row.get("MADRE", ""),
-                            row.get("P/M", ""),
-                            row.get("PADRINO", ""),
-                            row.get("MADRINA", ""),
-                            fecha
-                        ))
-                    except Exception as e:
-                        print(f"⚠️ Error importando fila: {row}")
-                        print(f"   Detalle: {e}")
+                    cur.execute("""
+                        INSERT INTO bautizos (
+                            genero, libro, partida, nombres, apellidos, parroquia_de_bautizo,
+                            edad, padre, madre, p_m, padrino, madrina,
+                            fecha_de_bautizo, dia, mes, anio
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        row.get("s"),
+                        row.get("libro"),
+                        row.get("partida"),
+                        row.get("nombres"),
+                        row.get("apellidos"),
+                        row.get("parroquia_de_bautizo"),
+                        row.get("edad"),
+                        row.get("padre"),
+                        row.get("madre"),
+                        row.get("p/m"),
+                        row.get("padrino"),
+                        row.get("madrina"),
+                        row.get("fecha_de_bautizo"),
+                        row.get("dia"),
+                        row.get("mes"),
+                        row.get("año")
+                    ))
             conn.commit()
-            print(f"✅ Datos de {file} importados correctamente.\n")
+        except Exception as e:
+            print(f" Error al importar {archivo}: {e}")
 
-    except Exception as e:
-        print(f"❌ Error general al importar: {e}\n")
+    conn.close()
+    print("✅ Importación completada.")
+def buscar_por_nombre(nombre):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM bautizos WHERE nombres LIKE ?", ('%' + nombre + '%',))
+    resultados = cur.fetchall()
+    conn.close()
 
-# ====================================
-# 🔹 Función: Buscar por nombre
-# ====================================
-def buscar_por_nombre():
-    try:
-        nombre = input("Ingrese el nombre o apellido a buscar: ")
-        cursor.execute("""
-            SELECT id, nombres, apellidos, fecha, padre, madre, padrino, madrina
-            FROM bautizos WHERE nombres LIKE ? OR apellidos LIKE ?
-        """, (f"%{nombre}%", f"%{nombre}%"))
-        resultados = cursor.fetchall()
+    if resultados:
+        print("\n Resultados encontrados:")
+        for r in resultados:
+            print(r)
+    else:
+        print("\n No se encontraron resultados.")
+def main():
+    crear_tabla()
 
-        if resultados:
-            print("\n🔎 RESULTADOS DE LA BÚSQUEDA:")
-            for r in resultados:
-                print(f"ID: {r[0]} | {r[1]} {r[2]} | Fecha: {r[3]} | Padres: {r[4]} y {r[5]} | Padrinos: {r[6]} y {r[7]}")
-            print()
-        else:
-            print("⚠️ No se encontraron coincidencias.\n")
-    except Exception as e:
-        print(f"❌ Error al buscar: {e}\n")
-
-# ====================================
-# 🔹 Menú principal
-# ====================================
-def menu():
     while True:
-        print("===== MENÚ PRINCIPAL =====")
-        print("1. Importar archivos CSV")
-        print("2. Buscar por nombre o apellido")
+        print("\n Menú Principal")
+        print("1. Importar CSV")
+        print("2. Buscar por nombre")
         print("3. Salir")
 
-        opcion = input("Elige una opción: ")
+        opcion = input("Selecciona una opción: ")
 
         if opcion == "1":
             importar_csv()
         elif opcion == "2":
-            buscar_por_nombre()
-        elif opcion == "3":
-            print("👋 Saliendo del programa...")
-            break
-        else:
-            print("❌ Opción no válida\n")
-
-# ====================================
-# 🔹 Ejecutar menú
-# ====================================
-if __name__ == "__main__":
-    menu()
-    conn.close()
+            nombre = input("Ingrese el nombre a buscar: ")
+input("\nPresiona Enter para salir...")
